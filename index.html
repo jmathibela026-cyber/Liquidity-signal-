@@ -239,7 +239,25 @@
   }
   .tp-row{ display:flex; align-items:baseline; gap: 10px; }
   .tp-value{ font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--buy); }
+  .tp-value.sl-value{ color: var(--sell); }
   .tp-note{ font-size: 12px; color: var(--ink-dim); }
+
+  .bias-row{ display:flex; gap: 22px; }
+  .bias-item{ flex:1; }
+  .bias-value{ font-family: var(--mono); font-size: 15px; font-weight: 650; margin-top: 4px; }
+
+  .checklist{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap: 9px; }
+  .checklist li{
+    display:flex; align-items:center; gap: 9px;
+    font-size: 13.5px; color: var(--ink);
+  }
+  .checklist .dot{
+    width: 16px; height:16px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 10px; font-weight:700; font-family: var(--mono);
+  }
+  .checklist .dot.yes{ background: rgba(52,211,153,0.18); color: var(--buy); border: 1px solid rgba(52,211,153,0.4); }
+  .checklist .dot.no{ background: rgba(133,146,172,0.15); color: var(--ink-dim); border: 1px solid var(--panel-line); }
 
   .error{
     display:none; color: var(--sell); font-size: 13.5px; padding: 14px;
@@ -266,7 +284,7 @@
     </div>
     <div class="titles">
       <h1>Liquidity Signal</h1>
-      <p>Trendline, range &amp; equal high/low liquidity</p>
+      <p>Liquidity, structure &amp; POI confluence</p>
     </div>
     <button class="gear" id="gearBtn" title="Change API key">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -326,10 +344,36 @@
         <div class="word" id="signalWord">—</div>
         <div class="conf">Confidence<b id="confWord">—</b></div>
       </div>
+      <div class="card" id="biasCard" style="display:none;">
+        <div class="bias-row">
+          <div class="bias-item">
+            <div class="reasoning-label">HTF Bias</div>
+            <div class="bias-value" id="biasValue">—</div>
+          </div>
+          <div class="bias-item">
+            <div class="reasoning-label">Range Position</div>
+            <div class="bias-value" id="pdValue">—</div>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <div class="reasoning-label">Why</div>
         <div class="reasoning" id="reasoningText"></div>
         <div class="tags" id="tags"></div>
+      </div>
+      <div class="card" id="poiCard" style="display:none;">
+        <div class="reasoning-label">Point of Interest</div>
+        <div class="reasoning" id="poiText"></div>
+      </div>
+      <div class="card" id="confluenceCard" style="display:none;">
+        <div class="reasoning-label">Trade Plan Checklist</div>
+        <ul class="checklist" id="checklist"></ul>
+      </div>
+      <div class="card" id="slCard" style="display:none;">
+        <div class="reasoning-label">Stop Loss</div>
+        <div class="tp-row">
+          <span class="tp-value sl-value" id="slValue">—</span>
+        </div>
       </div>
       <div class="card" id="tpCard" style="display:none;">
         <div class="reasoning-label">Take Profit</div>
@@ -341,7 +385,7 @@
     </div>
 
     <footer>
-      Reads price action for liquidity grabs at trendlines, range highs/lows,<br>and equal highs/lows. Not financial advice.
+      Reads liquidity grabs, break of structure, POIs &amp; premium/discount<br>using the Chapter 12 trade-plan checklist. Not financial advice.
     </footer>
   </div>
 
@@ -403,6 +447,23 @@ const confWord = document.getElementById('confWord');
 const reasoningText = document.getElementById('reasoningText');
 const tagsEl = document.getElementById('tags');
 const changeBtn = document.getElementById('changeBtn');
+const biasCard = document.getElementById('biasCard');
+const biasValue = document.getElementById('biasValue');
+const pdValue = document.getElementById('pdValue');
+const poiCard = document.getElementById('poiCard');
+const poiText = document.getElementById('poiText');
+const confluenceCard = document.getElementById('confluenceCard');
+const checklist = document.getElementById('checklist');
+const slCard = document.getElementById('slCard');
+const slValue = document.getElementById('slValue');
+
+const CONFLUENCE_LABELS = {
+  liquidityGrab: 'Liquidity grab with rejection',
+  bosInHtfDirection: 'BOS in HTF direction',
+  complexPullback: 'Complex pullback to POI',
+  premiumDiscountLocation: 'Correct premium/discount side',
+  poiBelowLiquidity: 'POI backed by further liquidity'
+};
 
 let base64Data = null;
 let mediaType = null;
@@ -453,35 +514,70 @@ function showError(msg){
   resultEl.classList.remove('show');
 }
 
-const SYSTEM_PROMPT = `You are a trading chart analyst applying ONE specific strategy: Liquidity Concepts.
+const SYSTEM_PROMPT = `You are a trading chart analyst applying a smart-money / liquidity framework built from two combined rule sets. Apply nothing outside these rules.
 
-STRATEGY RULES (this is the entire framework — apply nothing else):
-Markets need liquidity to move. Where liquidity is not already resting, the market tends to create and then take it before a real directional move happens. Retail traders place orders at predictable areas, and those areas are exactly where liquidity pools:
-1. Trendline Liquidity — an ascending or descending trendline drawn across swing highs/lows. Retail buys/sells at the trendline or on its break. Price often wicks through the trendline (grabbing liquidity) before reversing into the larger move.
-2. Range / Support & Resistance Liquidity — a horizontal range where retail buys support and sells resistance. Liquidity pools above the range high and below the range low. Price often spikes beyond the range boundary (a liquidity grab) before reversing back through the range in the opposite direction.
-3. Equal Lows ("double bottom") Liquidity — two or more lows at roughly the same price. Retail buys the "double bottom." Liquidity (sell stops) rests just below those equal lows. Expect a wick below the equal lows followed by a bullish reversal.
-4. Equal Highs ("double top") Liquidity — two or more highs at roughly the same price. Retail sells the "double top." Liquidity (buy stops) rests just above those equal highs. Expect a wick above the equal highs followed by a bearish reversal.
+PART 1 — LIQUIDITY TYPES (where retail stops rest):
+1. Trendline Liquidity — an ascending or descending trendline across swing highs/lows. Retail places stops/entries at the trendline. Price often wicks through it (grabbing liquidity) before reversing into the larger move.
+2. Range / Support & Resistance Liquidity — a horizontal range where retail buys support and sells resistance. Liquidity pools above the range high and below the range low. Price often spikes beyond the boundary (a liquidity grab) before reversing back through the range.
+3. Equal Lows ("double bottom") Liquidity — two or more lows at roughly the same price. Sell stops rest just below. Expect a wick below followed by a bullish reversal.
+4. Equal Highs ("double top") Liquidity — two or more highs at roughly the same price. Buy stops rest just above. Expect a wick above followed by a bearish reversal.
 
-General logic: a genuine reversal signal requires (a) identifying one of the four liquidity types above on the chart, and (b) seeing price already sweep/grab that liquidity (a wick or spike beyond the level) followed by rejection back the other way. A level that hasn't been swept yet is not yet a signal — it's a level to watch.
+PART 2 — MARKET STRUCTURE, POIs, PREMIUM/DISCOUNT (from "The Market Maker's Matrix"):
+- Structure: bullish = higher highs + higher lows; bearish = lower highs + lower lows. A Break of Structure (BOS) happens when a low that caused a higher high is broken by a candle BODY (bullish trend), or a high that caused a lower low is broken by a candle body (bearish trend). A wick alone does not confirm a BOS.
+- POI (Point of Interest) — the last opposite-direction candle (or small base) immediately before a BOS. This is the origin of the impulsive move and the area price is expected to return to. Mark it as a zone, not a single line: from the extreme wick of that candle to the open of the imbalance it left behind.
+- Premium / Discount — draw the current trading range (swing high to swing low) and mark its midpoint (50%). Above the midpoint = Premium (favor looking for shorts). Below the midpoint = Discount (favor looking for longs). A POI sitting in the "wrong" half of the range (e.g. a demand POI deep in premium) is lower quality.
+- Sponsorship — the origin of a move (the extreme high/low before a BOS) is a "protected" level; price is unlikely to trade back past it without invalidating the whole idea.
 
-TASK: Look at the uploaded chart screenshot. Identify visible liquidity structures (trendlines, ranges, equal highs, equal lows) and determine whether price has already grabbed liquidity at one of them with signs of rejection/reversal.
+PART 3 — THE FULL TRADE-PLAN CHECKLIST (from Chapter 12 — this is how you decide BUY / SELL / WAIT):
+Score the chart against these five confluences. Each is true/false — do not assume one from another.
+1. liquidityGrab — Has price swept one of the PART 1 liquidity types (trendline, range high/low, equal highs, or equal lows) with a wick/spike and shown rejection?
+2. bosInHtfDirection — Did that liquidity grab lead to a Break of Structure (candle-body close through a swing point) in the direction of the higher-timeframe trend visible on the chart?
+3. complexPullback — After the BOS, is price now retracing back toward the POI slowly/choppily (not a sharp v-shape), suggesting the market doesn't want to go the other way?
+4. premiumDiscountLocation — Is the POI/entry area on the correct side of the range's 50% midpoint (discount for longs, premium for shorts)?
+5. poiBelowLiquidity — Does the POI sit below (for a long) or above (for a short) another liquidity point/pool, giving price a magnet to reach once the POI reacts?
+
+Signal logic:
+- BUY or SELL requires AT MINIMUM confluences 1 and 2 true (liquidity grab + BOS in that direction), with 3-5 adding confidence. 5/5 = High confidence. 3-4/5 = Medium. Exactly 2/5 (only 1+2) = Low confidence, only signal if the setup still looks clean.
+- WAIT if confluence 1 or 2 is false, if price hasn't returned to a POI yet (still just a "potential" setup per the book), if the chart is ambiguous, or if it isn't a price chart at all.
+- Never force a BUY or SELL if the setup isn't clean — be honest about uncertainty.
 
 TAKE PROFIT — FIBONACCI EXTENSION:
 Once you have a BUY or SELL signal, calculate a take-profit price using the 161.8% Fibonacci extension:
 1. Read three price levels off the chart's price axis:
    - Point A: price where the relevant impulse move began
    - Point B: price where that impulse move ended and the pullback/retracement began
-   - Point C: price where the retracement ended and reversed (your entry area, at the liquidity grab)
+   - Point C: price where the retracement ended and reversed (your entry area, at the POI/liquidity grab)
 2. Compute take profit using a 1.618 multiple of the first leg's size, projected from C:
    - BUY: takeProfit = C + (|A - B| * 1.618)
    - SELL: takeProfit = C - (|A - B| * 1.618)
-3. Round to match the chart's price precision (e.g. 3 decimals for a pair like this, 2 for others — match what's on the axis).
-Always set "takeProfitNote" to "161.8% extension". If you cannot clearly read three price levels to do this calculation, set "takeProfit" to null and say why in "reasoning".
+3. Round to match the chart's price precision (match the decimals shown on the axis).
+Always set "takeProfitNote" to "161.8% extension". If you cannot clearly read three price levels, set "takeProfit" to null and say why in "reasoning".
+
+STOP LOSS:
+Set "stopLoss" a few ticks beyond the POI's protective extreme (below the POI low for a BUY, above the POI high for a SELL) — the "sponsorship" level from Part 2. If unclear, set to null.
 
 Respond with ONLY a JSON object, no other text, no markdown fences, in this exact shape:
-{"signal": "BUY" | "SELL" | "WAIT", "confidence": "High" | "Medium" | "Low", "reasoning": "1-2 short sentences, plain language, referencing the specific liquidity type and where on the chart it happened", "zones": ["short tag", "short tag"], "takeProfit": number or null, "takeProfitNote": "short label like '161.8% extension' or null"}
+{
+  "signal": "BUY" | "SELL" | "WAIT",
+  "confidence": "High" | "Medium" | "Low",
+  "reasoning": "2-3 short sentences, plain language, walking through which liquidity was grabbed, the BOS, and the POI",
+  "zones": ["short tag", "short tag"],
+  "htfBias": "Bullish" | "Bearish" | "Ranging",
+  "premiumDiscount": "Premium" | "Discount" | "Equilibrium",
+  "poi": "short description of the POI location/type, or null",
+  "confluences": {
+    "liquidityGrab": true or false,
+    "bosInHtfDirection": true or false,
+    "complexPullback": true or false,
+    "premiumDiscountLocation": true or false,
+    "poiBelowLiquidity": true or false
+  },
+  "stopLoss": number or null,
+  "takeProfit": number or null,
+  "takeProfitNote": "short label like '161.8% extension' or null"
+}
 
-Use WAIT when no liquidity has clearly been grabbed yet, when the chart is ambiguous, or when it isn't a price chart at all. Keep "zones" to 1-4 short tags like "Equal highs swept", "Range low grabbed", "Trendline liquidity". Be honest about uncertainty — do not force a BUY or SELL if the setup isn't clean.`;
+Keep "zones" to 1-4 short tags like "Equal highs swept", "Range low grabbed", "Bullish BOS", "Demand POI in discount".`;
 
 analyzeBtn.addEventListener('click', async () => {
   if (!base64Data) return;
@@ -503,7 +599,7 @@ analyzeBtn.addEventListener('click', async () => {
         system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{
           parts: [
-            { text: "Analyze this chart using the liquidity concepts strategy and return the JSON signal." },
+            { text: "Analyze this chart using the liquidity + market structure/POI strategy and return the JSON signal." },
             { inline_data: { mime_type: mediaType, data: base64Data } }
           ]
         }],
@@ -552,6 +648,56 @@ function renderResult(parsed){
     t.textContent = z;
     tagsEl.appendChild(t);
   });
+
+  // HTF bias / premium-discount
+  if (parsed.htfBias || parsed.premiumDiscount) {
+    biasCard.style.display = 'block';
+    biasValue.textContent = parsed.htfBias || '—';
+    biasValue.style.color = parsed.htfBias === 'Bullish' ? 'var(--buy)'
+      : parsed.htfBias === 'Bearish' ? 'var(--sell)' : 'var(--ink)';
+    pdValue.textContent = parsed.premiumDiscount || '—';
+    pdValue.style.color = parsed.premiumDiscount === 'Discount' ? 'var(--buy)'
+      : parsed.premiumDiscount === 'Premium' ? 'var(--sell)' : 'var(--ink)';
+  } else {
+    biasCard.style.display = 'none';
+  }
+
+  // Point of interest
+  if (parsed.poi) {
+    poiCard.style.display = 'block';
+    poiText.textContent = parsed.poi;
+  } else {
+    poiCard.style.display = 'none';
+  }
+
+  // Confluence checklist
+  const conf = parsed.confluences || null;
+  if (conf) {
+    confluenceCard.style.display = 'block';
+    checklist.innerHTML = '';
+    Object.keys(CONFLUENCE_LABELS).forEach(key => {
+      const met = !!conf[key];
+      const li = document.createElement('li');
+      const dot = document.createElement('span');
+      dot.className = 'dot ' + (met ? 'yes' : 'no');
+      dot.textContent = met ? '✓' : '–';
+      const label = document.createElement('span');
+      label.textContent = CONFLUENCE_LABELS[key];
+      li.appendChild(dot);
+      li.appendChild(label);
+      checklist.appendChild(li);
+    });
+  } else {
+    confluenceCard.style.display = 'none';
+  }
+
+  // Stop loss
+  if (parsed.stopLoss !== null && parsed.stopLoss !== undefined) {
+    slCard.style.display = 'block';
+    slValue.textContent = parsed.stopLoss;
+  } else {
+    slCard.style.display = 'none';
+  }
 
   const tpCard = document.getElementById('tpCard');
   const tpValue = document.getElementById('tpValue');
