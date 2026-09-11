@@ -308,6 +308,23 @@
     <button class="save-key" id="saveKeyBtn" disabled>Save &amp; continue</button>
   </div>
 
+  <!-- MT5 BRIDGE SETTINGS -->
+  <div class="setup card" id="mt5Setup">
+    <h2>MT5 Auto-Entry Bridge</h2>
+    <p>BUY/SELL signals are sent automatically to a small bridge server on your PC, which your MT5 Expert Advisor polls to place trades. No confirmation step — trades fire the moment a signal is generated.</p>
+    <input type="text" id="bridgeUrlInput" placeholder="http://192.168.1.50:5000">
+    <div class="hint">The bridge server's address on your local network (see setup instructions in the files provided).</div>
+    <input type="password" id="bridgeSecretInput" placeholder="Shared secret (must match EA input)">
+    <div class="hint">A password only your app and EA know — stops other devices on your network from injecting fake signals.</div>
+    <input type="text" id="defaultSymbolInput" placeholder="Default symbol e.g. EURUSD">
+    <div class="hint">Used if the AI can't read the symbol off the chart image. Must exactly match the symbol name in MT5.</div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink-dim);margin-bottom:16px;">
+      <input type="checkbox" id="autoSendToggle" style="width:auto;margin:0;">
+      Auto-send every BUY/SELL signal to MT5
+    </label>
+    <button class="save-key" id="saveMt5Btn">Save bridge settings</button>
+  </div>
+
   <!-- MAIN APP -->
   <div class="app-screen" id="appScreen">
     <div class="card">
@@ -365,6 +382,10 @@
         <div class="reasoning-label">Point of Interest</div>
         <div class="reasoning" id="poiText"></div>
       </div>
+      <div class="card" id="entrySetupCard" style="display:none;">
+        <div class="reasoning-label">Entry Setup</div>
+        <div class="reasoning" id="entrySetupText"></div>
+      </div>
       <div class="card" id="confluenceCard" style="display:none;">
         <div class="reasoning-label">Trade Plan Checklist</div>
         <ul class="checklist" id="checklist"></ul>
@@ -381,6 +402,10 @@
           <span class="tp-value" id="tpValue">—</span>
           <span class="tp-note" id="tpNote"></span>
         </div>
+      </div>
+      <div class="card" id="mt5StatusCard" style="display:none;">
+        <div class="reasoning-label">MT5 Auto-Entry</div>
+        <div class="reasoning" id="mt5StatusText">—</div>
       </div>
     </div>
 
@@ -399,21 +424,41 @@ if ('serviceWorker' in navigator) {
 }
 
 const setupEl = document.getElementById('setup');
+const mt5SetupEl = document.getElementById('mt5Setup');
 const appScreen = document.getElementById('appScreen');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const saveKeyBtn = document.getElementById('saveKeyBtn');
 const gearBtn = document.getElementById('gearBtn');
+const bridgeUrlInput = document.getElementById('bridgeUrlInput');
+const bridgeSecretInput = document.getElementById('bridgeSecretInput');
+const defaultSymbolInput = document.getElementById('defaultSymbolInput');
+const autoSendToggle = document.getElementById('autoSendToggle');
+const saveMt5Btn = document.getElementById('saveMt5Btn');
 
 let apiKey = localStorage.getItem('gemini_api_key') || '';
+let bridgeUrl = localStorage.getItem('mt5_bridge_url') || '';
+let bridgeSecret = localStorage.getItem('mt5_shared_secret') || '';
+let defaultSymbol = localStorage.getItem('mt5_default_symbol') || '';
+let autoSend = localStorage.getItem('mt5_auto_send') === 'true';
+
+function fillMt5Inputs(){
+  bridgeUrlInput.value = bridgeUrl;
+  bridgeSecretInput.value = bridgeSecret;
+  defaultSymbolInput.value = defaultSymbol;
+  autoSendToggle.checked = autoSend;
+}
 
 function showSetup(prefill){
   setupEl.classList.add('show');
+  mt5SetupEl.classList.add('show');
   appScreen.classList.remove('show');
   apiKeyInput.value = prefill ? apiKey : '';
   saveKeyBtn.disabled = true;
+  fillMt5Inputs();
 }
 function showApp(){
   setupEl.classList.remove('show');
+  mt5SetupEl.classList.remove('show');
   appScreen.classList.add('show');
 }
 
@@ -426,6 +471,17 @@ saveKeyBtn.addEventListener('click', () => {
   apiKey = val;
   localStorage.setItem('gemini_api_key', apiKey);
   showApp();
+});
+saveMt5Btn.addEventListener('click', () => {
+  bridgeUrl = bridgeUrlInput.value.trim().replace(/\/+$/, '');
+  bridgeSecret = bridgeSecretInput.value.trim();
+  defaultSymbol = defaultSymbolInput.value.trim();
+  autoSend = autoSendToggle.checked;
+  localStorage.setItem('mt5_bridge_url', bridgeUrl);
+  localStorage.setItem('mt5_shared_secret', bridgeSecret);
+  localStorage.setItem('mt5_default_symbol', defaultSymbol);
+  localStorage.setItem('mt5_auto_send', autoSend ? 'true' : 'false');
+  if (apiKey) showApp();
 });
 gearBtn.addEventListener('click', () => showSetup(true));
 
@@ -452,10 +508,14 @@ const biasValue = document.getElementById('biasValue');
 const pdValue = document.getElementById('pdValue');
 const poiCard = document.getElementById('poiCard');
 const poiText = document.getElementById('poiText');
+const entrySetupCard = document.getElementById('entrySetupCard');
+const entrySetupText = document.getElementById('entrySetupText');
 const confluenceCard = document.getElementById('confluenceCard');
 const checklist = document.getElementById('checklist');
 const slCard = document.getElementById('slCard');
 const slValue = document.getElementById('slValue');
+const mt5StatusCard = document.getElementById('mt5StatusCard');
+const mt5StatusText = document.getElementById('mt5StatusText');
 
 const CONFLUENCE_LABELS = {
   liquidityGrab: 'Liquidity grab with rejection',
@@ -528,6 +588,20 @@ PART 2 — MARKET STRUCTURE, POIs, PREMIUM/DISCOUNT (from "The Market Maker's Ma
 - Premium / Discount — draw the current trading range (swing high to swing low) and mark its midpoint (50%). Above the midpoint = Premium (favor looking for shorts). Below the midpoint = Discount (favor looking for longs). A POI sitting in the "wrong" half of the range (e.g. a demand POI deep in premium) is lower quality.
 - Sponsorship — the origin of a move (the extreme high/low before a BOS) is a "protected" level; price is unlikely to trade back past it without invalidating the whole idea.
 
+PART 4 — NAMED ENTRY SETUPS (from "Understanding Liquidity" — use these exact names to classify HOW price is entering):
+Liquidity pools are labeled BSL (Buy Stop Liquidity — sits above old highs, PDH/PWH/PMH, equal highs) or SSL (Sell Stop Liquidity — sits below old lows, PDL/PWL/PML, equal lows). A Stop Hunt (SH) is the false breakout that sweeps BSL or SSL. BMS/BOS is the resulting break in market structure; a ChoCh (Change of Character) is a BMS against the prior trend (HL or LH broken), signaling a possible reversal, vs. a continuation BOS (another HH or LL in the same direction). RTO = Return To Origin, i.e. price coming back to retest the BMS/POI level before continuing — this can be a "quick RTO" (comes back almost immediately) or a "late RTO" (chops through equal highs/lows first before finally returning). Classify the setup on the chart as one of:
+1. "SH-ChoCh Quick RTO" — stop hunt sweeps BSL/SSL, causes a ChoCh, price returns to the BMS level quickly and enters.
+2. "SH-ChoCh Late RTO" — same as above, but price first builds more equal highs/equal lows (extra liquidity) before finally returning to the BMS level.
+3. "SH + Confirmation Re-entry (Quick RTO)" — after the first SH-ChoCh, price makes a second smaller stop hunt + BMS right near the level, and entry is taken on that second (confirmation) leg, quickly.
+4. "SH + Confirmation Re-entry (Late RTO)" — same as #3 but with equal highs/lows forming before the confirmation leg.
+5. "SH + Fake BMS" — after the first ChoCh, price makes a break that LOOKS like a new BMS/CHoCH but fails to actually reverse (a "fake BMS"), and the real entry only comes on the next genuine BMS back toward the origin.
+6. "SH + Compression" — after the BMS, price does NOT retrace cleanly; instead it moves sideways in a tight, choppy, overlapping range near the level (compression) before releasing in the trade direction. Entry is taken as price breaks out of the compression.
+If none of these six patterns are clearly visible, set entrySetupType to "None" and treat it as a generic liquidity/BOS setup instead.
+Always trade in the direction of the higher-timeframe trend (Factor: The Trend), only treat equal highs/equal lows as genuine SnR if price has faked out through them already (Factor: Support & Resistance), and always prefer entries where compression or a clean RTO is visible over entries taken mid-impulse (Factor: Compression).
+
+PART 5 — ASSET SCOPE:
+This framework applies equally to forex, metals, and synthetic/volatility indices. Do not assume forex-specific behavior (like session times or news events) matters — analyze pure price action/structure only, since synthetic indices trade 24/7 with no news dependency.
+
 PART 3 — THE FULL TRADE-PLAN CHECKLIST (from Chapter 12 — this is how you decide BUY / SELL / WAIT):
 Score the chart against these five confluences. Each is true/false — do not assume one from another.
 1. liquidityGrab — Has price swept one of the PART 1 liquidity types (trendline, range high/low, equal highs, or equal lows) with a wick/spike and shown rejection?
@@ -540,6 +614,9 @@ Signal logic:
 - BUY or SELL requires AT MINIMUM confluences 1 and 2 true (liquidity grab + BOS in that direction), with 3-5 adding confidence. 5/5 = High confidence. 3-4/5 = Medium. Exactly 2/5 (only 1+2) = Low confidence, only signal if the setup still looks clean.
 - WAIT if confluence 1 or 2 is false, if price hasn't returned to a POI yet (still just a "potential" setup per the book), if the chart is ambiguous, or if it isn't a price chart at all.
 - Never force a BUY or SELL if the setup isn't clean — be honest about uncertainty.
+
+SYMBOL:
+Read the instrument/pair name printed on the chart (axis label, watermark, or title — e.g. "EURUSD", "XAUUSD", "Volatility 75 Index", "GBPJPY"). Set "symbol" to that exact text if visible. If you cannot find it printed anywhere on the chart, set "symbol" to null — do not guess.
 
 TAKE PROFIT — FIBONACCI EXTENSION:
 Once you have a BUY or SELL signal, calculate a take-profit price using the 161.8% Fibonacci extension:
@@ -562,9 +639,11 @@ Respond with ONLY a JSON object, no other text, no markdown fences, in this exac
   "confidence": "High" | "Medium" | "Low",
   "reasoning": "2-3 short sentences, plain language, walking through which liquidity was grabbed, the BOS, and the POI",
   "zones": ["short tag", "short tag"],
+  "symbol": "exact instrument name read from the chart, or null",
   "htfBias": "Bullish" | "Bearish" | "Ranging",
   "premiumDiscount": "Premium" | "Discount" | "Equilibrium",
   "poi": "short description of the POI location/type, or null",
+  "entrySetupType": "SH-ChoCh Quick RTO" | "SH-ChoCh Late RTO" | "SH + Confirmation Re-entry (Quick RTO)" | "SH + Confirmation Re-entry (Late RTO)" | "SH + Fake BMS" | "SH + Compression" | "None",
   "confluences": {
     "liquidityGrab": true or false,
     "bosInHtfDirection": true or false,
@@ -577,7 +656,7 @@ Respond with ONLY a JSON object, no other text, no markdown fences, in this exac
   "takeProfitNote": "short label like '161.8% extension' or null"
 }
 
-Keep "zones" to 1-4 short tags like "Equal highs swept", "Range low grabbed", "Bullish BOS", "Demand POI in discount".`;
+Keep "zones" to 1-4 short tags like "BSL swept at PDH", "SSL swept at equal lows", "ChoCh confirmed", "Demand POI in discount".`;
 
 analyzeBtn.addEventListener('click', async () => {
   if (!base64Data) return;
@@ -670,6 +749,14 @@ function renderResult(parsed){
     poiCard.style.display = 'none';
   }
 
+  // Named entry setup
+  if (parsed.entrySetupType && parsed.entrySetupType !== 'None') {
+    entrySetupCard.style.display = 'block';
+    entrySetupText.textContent = parsed.entrySetupType;
+  } else {
+    entrySetupCard.style.display = 'none';
+  }
+
   // Confluence checklist
   const conf = parsed.confluences || null;
   if (conf) {
@@ -711,7 +798,61 @@ function renderResult(parsed){
     tpCard.style.display = 'none';
   }
 
+  maybeAutoSendToMt5(parsed, signal);
+
   resultEl.classList.add('show');
+}
+
+function maybeAutoSendToMt5(parsed, signal){
+  mt5StatusCard.style.display = 'none';
+  if (!autoSend) return;
+  if (signal !== 'BUY' && signal !== 'SELL') return;
+
+  if (!bridgeUrl) {
+    mt5StatusCard.style.display = 'block';
+    mt5StatusText.textContent = 'Auto-send is on, but no bridge URL is set — open settings (gear icon) to add one.';
+    return;
+  }
+  const symbol = (parsed.symbol && String(parsed.symbol).trim()) || defaultSymbol;
+  if (!symbol) {
+    mt5StatusCard.style.display = 'block';
+    mt5StatusText.textContent = 'Could not read a symbol off the chart and no default symbol is set — trade NOT sent. Set a default symbol in settings.';
+    return;
+  }
+  if (parsed.stopLoss === null || parsed.stopLoss === undefined || parsed.takeProfit === null || parsed.takeProfit === undefined) {
+    mt5StatusCard.style.display = 'block';
+    mt5StatusText.textContent = 'Missing stop loss or take profit — trade NOT sent to MT5 (the EA requires both).';
+    return;
+  }
+
+  mt5StatusCard.style.display = 'block';
+  mt5StatusText.textContent = 'Sending to MT5 bridge…';
+
+  const payload = {
+    signal: signal,
+    symbol: symbol,
+    stopLoss: parsed.stopLoss,
+    takeProfit: parsed.takeProfit,
+    confidence: parsed.confidence || null,
+    entrySetupType: parsed.entrySetupType || null,
+    htfBias: parsed.htfBias || null,
+    reasoning: parsed.reasoning || null
+  };
+
+  fetch(bridgeUrl + '/signal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Signal-Secret': bridgeSecret },
+    body: JSON.stringify(payload)
+  }).then(async (res) => {
+    if (!res.ok) {
+      let body = '';
+      try { body = await res.text(); } catch (e) {}
+      throw new Error('HTTP ' + res.status + (body ? ': ' + body.slice(0, 150) : ''));
+    }
+    mt5StatusText.textContent = 'Sent — ' + signal + ' ' + symbol + ' queued for the EA to execute.';
+  }).catch((err) => {
+    mt5StatusText.textContent = 'Send failed: ' + err.message + ' (check the bridge server is running and reachable).';
+  });
 }
 </script>
 </body>
