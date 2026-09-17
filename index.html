@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="Liquidity">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root{
     --bg: #0A0F1A;
@@ -50,6 +51,18 @@
     padding: 28px 18px 60px;
     padding-top: calc(28px + env(safe-area-inset-top));
     padding-bottom: calc(60px + env(safe-area-inset-bottom));
+    position: relative;
+    z-index: 1;
+  }
+  .hero-bg{
+    position: fixed;
+    inset: 0;
+    background-repeat: no-repeat;
+    background-position: bottom center;
+    background-size: min(480px, 100vw) auto;
+    opacity: 0.9;
+    pointer-events: none;
+    z-index: 0;
   }
   header{
     display:flex;
@@ -239,25 +252,28 @@
   }
   .tp-row{ display:flex; align-items:baseline; gap: 10px; }
   .tp-value{ font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--buy); }
-  .tp-value.sl-value{ color: var(--sell); }
   .tp-note{ font-size: 12px; color: var(--ink-dim); }
 
-  .bias-row{ display:flex; gap: 22px; }
-  .bias-item{ flex:1; }
-  .bias-value{ font-family: var(--mono); font-size: 15px; font-weight: 650; margin-top: 4px; }
+  .mode-toggle{
+    display:flex; gap: 8px; margin-bottom: 16px;
+    background: var(--panel); border: 1px solid var(--panel-line);
+    border-radius: 12px; padding: 4px;
+  }
+  .mode-btn{
+    flex:1; padding: 10px; border-radius: 9px; border:none;
+    background: transparent; color: var(--ink-dim);
+    font-family: var(--sans); font-size: 13.5px; font-weight: 600; cursor:pointer;
+  }
+  .mode-btn.active{ background: var(--accent); color: #06131F; }
 
-  .checklist{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap: 9px; }
-  .checklist li{
-    display:flex; align-items:center; gap: 9px;
-    font-size: 13.5px; color: var(--ink);
+  .chip-row{ display:flex; flex-wrap:wrap; gap: 8px; }
+  .chip{
+    padding: 8px 14px; border-radius: 20px;
+    border: 1px solid var(--panel-line); background: var(--bg);
+    color: var(--ink); font-family: var(--mono); font-size: 12.5px;
+    cursor:pointer;
   }
-  .checklist .dot{
-    width: 16px; height:16px; border-radius:50%; flex-shrink:0;
-    display:flex; align-items:center; justify-content:center;
-    font-size: 10px; font-weight:700; font-family: var(--mono);
-  }
-  .checklist .dot.yes{ background: rgba(52,211,153,0.18); color: var(--buy); border: 1px solid rgba(52,211,153,0.4); }
-  .checklist .dot.no{ background: rgba(133,146,172,0.15); color: var(--ink-dim); border: 1px solid var(--panel-line); }
+  .chip.active{ background: var(--accent-dim); border-color: var(--accent); color: #BFE0FA; }
 
   .error{
     display:none; color: var(--sell); font-size: 13.5px; padding: 14px;
@@ -273,6 +289,7 @@
 </style>
 </head>
 <body>
+<div class="hero-bg" style="background-image:url('hero-bg.svg')"></div>
 <div class="wrap">
 
   <header>
@@ -284,7 +301,7 @@
     </div>
     <div class="titles">
       <h1>Liquidity Signal</h1>
-      <p>Liquidity, structure &amp; POI confluence</p>
+      <p>Trendline, range &amp; equal high/low liquidity</p>
     </div>
     <button class="gear" id="gearBtn" title="Change API key">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -304,29 +321,21 @@
       <li>Copy it and paste it below</li>
     </ol>
     <input type="password" id="apiKeyInput" placeholder="AIza...">
-    <div class="hint">Starts with "AIza". Free tier — Google's terms allow using free-tier requests to improve their models.</div>
+    <div class="hint">Starts with "AIza". Only needed for Screenshot mode. Free tier — Google's terms allow using free-tier requests to improve their models.</div>
+    <input type="password" id="marketKeyInput" placeholder="Twelve Data API key (only for Live Chart)">
+    <div class="hint">From twelvedata.com — free, no card. Only needed for Live Chart mode.</div>
     <button class="save-key" id="saveKeyBtn" disabled>Save &amp; continue</button>
-  </div>
-
-  <!-- MT5 BRIDGE SETTINGS -->
-  <div class="setup card" id="mt5Setup">
-    <h2>MT5 Auto-Entry Bridge</h2>
-    <p>BUY/SELL signals are sent automatically to a small bridge server on your PC, which your MT5 Expert Advisor polls to place trades. No confirmation step — trades fire the moment a signal is generated.</p>
-    <input type="text" id="bridgeUrlInput" placeholder="http://192.168.1.50:5000">
-    <div class="hint">The bridge server's address on your local network (see setup instructions in the files provided).</div>
-    <input type="password" id="bridgeSecretInput" placeholder="Shared secret (must match EA input)">
-    <div class="hint">A password only your app and EA know — stops other devices on your network from injecting fake signals.</div>
-    <input type="text" id="defaultSymbolInput" placeholder="Default symbol e.g. EURUSD">
-    <div class="hint">Used if the AI can't read the symbol off the chart image. Must exactly match the symbol name in MT5.</div>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink-dim);margin-bottom:16px;">
-      <input type="checkbox" id="autoSendToggle" style="width:auto;margin:0;">
-      Auto-send every BUY/SELL signal to MT5
-    </label>
-    <button class="save-key" id="saveMt5Btn">Save bridge settings</button>
   </div>
 
   <!-- MAIN APP -->
   <div class="app-screen" id="appScreen">
+
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="modeScreenshotBtn">Screenshot</button>
+      <button class="mode-btn" id="modeLiveBtn">Live Chart</button>
+    </div>
+
+    <div id="screenshotMode">
     <div class="card">
       <div class="drop" id="drop">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
@@ -348,6 +357,44 @@
     </div>
 
     <button class="analyze" id="analyzeBtn" disabled>Analyze chart</button>
+    </div>
+
+    <div id="liveMode" style="display:none;">
+      <div class="card">
+        <div class="reasoning-label">Symbol</div>
+        <div class="chip-row" id="symbolRow">
+          <button class="chip active" data-symbol="EUR/USD">EURUSD</button>
+          <button class="chip" data-symbol="GBP/USD">GBPUSD</button>
+          <button class="chip" data-symbol="USD/JPY">USDJPY</button>
+          <button class="chip" data-symbol="USD/CHF">USDCHF</button>
+          <button class="chip" data-symbol="AUD/USD">AUDUSD</button>
+          <button class="chip" data-symbol="USD/CAD">USDCAD</button>
+          <button class="chip" data-symbol="NZD/USD">NZDUSD</button>
+          <button class="chip" data-symbol="XAU/USD">XAUUSD</button>
+        </div>
+        <div class="reasoning-label" style="margin-top:16px;">Timeframe</div>
+        <div class="chip-row" id="timeframeRow">
+          <button class="chip" data-tf="15min">15m</button>
+          <button class="chip active" data-tf="1h">1H</button>
+          <button class="chip" data-tf="4h">4H</button>
+          <button class="chip" data-tf="1day">1D</button>
+        </div>
+      </div>
+
+      <button class="analyze" id="loadChartBtn">Load chart</button>
+
+      <div class="status" id="liveStatus">
+        <div class="spin"></div>
+        <span>Fetching live candles…</span>
+      </div>
+      <div class="error" id="liveError"></div>
+
+      <div class="card" id="chartCard" style="display:none;">
+        <div id="chartContainer" style="height:280px;"></div>
+      </div>
+
+      <button class="analyze" id="scanBtn" style="display:none;">Scan for signal</button>
+    </div>
 
     <div class="status" id="status">
       <div class="spin"></div>
@@ -361,40 +408,10 @@
         <div class="word" id="signalWord">—</div>
         <div class="conf">Confidence<b id="confWord">—</b></div>
       </div>
-      <div class="card" id="biasCard" style="display:none;">
-        <div class="bias-row">
-          <div class="bias-item">
-            <div class="reasoning-label">HTF Bias</div>
-            <div class="bias-value" id="biasValue">—</div>
-          </div>
-          <div class="bias-item">
-            <div class="reasoning-label">Range Position</div>
-            <div class="bias-value" id="pdValue">—</div>
-          </div>
-        </div>
-      </div>
       <div class="card">
         <div class="reasoning-label">Why</div>
         <div class="reasoning" id="reasoningText"></div>
         <div class="tags" id="tags"></div>
-      </div>
-      <div class="card" id="poiCard" style="display:none;">
-        <div class="reasoning-label">Point of Interest</div>
-        <div class="reasoning" id="poiText"></div>
-      </div>
-      <div class="card" id="entrySetupCard" style="display:none;">
-        <div class="reasoning-label">Entry Setup</div>
-        <div class="reasoning" id="entrySetupText"></div>
-      </div>
-      <div class="card" id="confluenceCard" style="display:none;">
-        <div class="reasoning-label">Trade Plan Checklist</div>
-        <ul class="checklist" id="checklist"></ul>
-      </div>
-      <div class="card" id="slCard" style="display:none;">
-        <div class="reasoning-label">Stop Loss</div>
-        <div class="tp-row">
-          <span class="tp-value sl-value" id="slValue">—</span>
-        </div>
       </div>
       <div class="card" id="tpCard" style="display:none;">
         <div class="reasoning-label">Take Profit</div>
@@ -403,14 +420,10 @@
           <span class="tp-note" id="tpNote"></span>
         </div>
       </div>
-      <div class="card" id="mt5StatusCard" style="display:none;">
-        <div class="reasoning-label">MT5 Auto-Entry</div>
-        <div class="reasoning" id="mt5StatusText">—</div>
-      </div>
     </div>
 
     <footer>
-      Reads liquidity grabs, break of structure, POIs &amp; premium/discount<br>using the Chapter 12 trade-plan checklist. Not financial advice.
+      Reads price action for liquidity grabs at trendlines, range highs/lows,<br>and equal highs/lows. Not financial advice.
     </footer>
   </div>
 
@@ -424,68 +437,44 @@ if ('serviceWorker' in navigator) {
 }
 
 const setupEl = document.getElementById('setup');
-const mt5SetupEl = document.getElementById('mt5Setup');
 const appScreen = document.getElementById('appScreen');
 const apiKeyInput = document.getElementById('apiKeyInput');
+const marketKeyInput = document.getElementById('marketKeyInput');
 const saveKeyBtn = document.getElementById('saveKeyBtn');
 const gearBtn = document.getElementById('gearBtn');
-const bridgeUrlInput = document.getElementById('bridgeUrlInput');
-const bridgeSecretInput = document.getElementById('bridgeSecretInput');
-const defaultSymbolInput = document.getElementById('defaultSymbolInput');
-const autoSendToggle = document.getElementById('autoSendToggle');
-const saveMt5Btn = document.getElementById('saveMt5Btn');
 
 let apiKey = localStorage.getItem('gemini_api_key') || '';
-let bridgeUrl = localStorage.getItem('mt5_bridge_url') || '';
-let bridgeSecret = localStorage.getItem('mt5_shared_secret') || '';
-let defaultSymbol = localStorage.getItem('mt5_default_symbol') || '';
-let autoSend = localStorage.getItem('mt5_auto_send') === 'true';
-
-function fillMt5Inputs(){
-  bridgeUrlInput.value = bridgeUrl;
-  bridgeSecretInput.value = bridgeSecret;
-  defaultSymbolInput.value = defaultSymbol;
-  autoSendToggle.checked = autoSend;
-}
+let marketKey = localStorage.getItem('market_api_key') || '';
 
 function showSetup(prefill){
   setupEl.classList.add('show');
-  mt5SetupEl.classList.add('show');
   appScreen.classList.remove('show');
   apiKeyInput.value = prefill ? apiKey : '';
+  marketKeyInput.value = prefill ? marketKey : '';
   saveKeyBtn.disabled = true;
-  fillMt5Inputs();
 }
 function showApp(){
   setupEl.classList.remove('show');
-  mt5SetupEl.classList.remove('show');
   appScreen.classList.add('show');
 }
 
-apiKeyInput.addEventListener('input', () => {
-  saveKeyBtn.disabled = apiKeyInput.value.trim().length < 15;
-});
+function checkKeysValid(){
+  const a = apiKeyInput.value.trim();
+  const m = marketKeyInput.value.trim();
+  saveKeyBtn.disabled = !(a.length >= 15 || m.length >= 10);
+}
+apiKeyInput.addEventListener('input', checkKeysValid);
+marketKeyInput.addEventListener('input', checkKeysValid);
 saveKeyBtn.addEventListener('click', () => {
-  const val = apiKeyInput.value.trim();
-  if (val.length < 15) return;
-  apiKey = val;
+  apiKey = apiKeyInput.value.trim();
+  marketKey = marketKeyInput.value.trim();
   localStorage.setItem('gemini_api_key', apiKey);
+  localStorage.setItem('market_api_key', marketKey);
   showApp();
-});
-saveMt5Btn.addEventListener('click', () => {
-  bridgeUrl = bridgeUrlInput.value.trim().replace(/\/+$/, '');
-  bridgeSecret = bridgeSecretInput.value.trim();
-  defaultSymbol = defaultSymbolInput.value.trim();
-  autoSend = autoSendToggle.checked;
-  localStorage.setItem('mt5_bridge_url', bridgeUrl);
-  localStorage.setItem('mt5_shared_secret', bridgeSecret);
-  localStorage.setItem('mt5_default_symbol', defaultSymbol);
-  localStorage.setItem('mt5_auto_send', autoSend ? 'true' : 'false');
-  if (apiKey) showApp();
 });
 gearBtn.addEventListener('click', () => showSetup(true));
 
-if (apiKey) { showApp(); } else { showSetup(false); }
+if (apiKey || marketKey) { showApp(); } else { showSetup(false); }
 
 // ---- Chart analyzer logic ----
 const drop = document.getElementById('drop');
@@ -503,27 +492,6 @@ const confWord = document.getElementById('confWord');
 const reasoningText = document.getElementById('reasoningText');
 const tagsEl = document.getElementById('tags');
 const changeBtn = document.getElementById('changeBtn');
-const biasCard = document.getElementById('biasCard');
-const biasValue = document.getElementById('biasValue');
-const pdValue = document.getElementById('pdValue');
-const poiCard = document.getElementById('poiCard');
-const poiText = document.getElementById('poiText');
-const entrySetupCard = document.getElementById('entrySetupCard');
-const entrySetupText = document.getElementById('entrySetupText');
-const confluenceCard = document.getElementById('confluenceCard');
-const checklist = document.getElementById('checklist');
-const slCard = document.getElementById('slCard');
-const slValue = document.getElementById('slValue');
-const mt5StatusCard = document.getElementById('mt5StatusCard');
-const mt5StatusText = document.getElementById('mt5StatusText');
-
-const CONFLUENCE_LABELS = {
-  liquidityGrab: 'Liquidity grab with rejection',
-  bosInHtfDirection: 'BOS in HTF direction',
-  complexPullback: 'Complex pullback to POI',
-  premiumDiscountLocation: 'Correct premium/discount side',
-  poiBelowLiquidity: 'POI backed by further liquidity'
-};
 
 let base64Data = null;
 let mediaType = null;
@@ -574,89 +542,35 @@ function showError(msg){
   resultEl.classList.remove('show');
 }
 
-const SYSTEM_PROMPT = `You are a trading chart analyst applying a smart-money / liquidity framework built from two combined rule sets. Apply nothing outside these rules.
+const SYSTEM_PROMPT = `You are a trading chart analyst applying ONE specific strategy: Liquidity Concepts.
 
-PART 1 — LIQUIDITY TYPES (where retail stops rest):
-1. Trendline Liquidity — an ascending or descending trendline across swing highs/lows. Retail places stops/entries at the trendline. Price often wicks through it (grabbing liquidity) before reversing into the larger move.
-2. Range / Support & Resistance Liquidity — a horizontal range where retail buys support and sells resistance. Liquidity pools above the range high and below the range low. Price often spikes beyond the boundary (a liquidity grab) before reversing back through the range.
-3. Equal Lows ("double bottom") Liquidity — two or more lows at roughly the same price. Sell stops rest just below. Expect a wick below followed by a bullish reversal.
-4. Equal Highs ("double top") Liquidity — two or more highs at roughly the same price. Buy stops rest just above. Expect a wick above followed by a bearish reversal.
+STRATEGY RULES (this is the entire framework — apply nothing else):
+Markets need liquidity to move. Where liquidity is not already resting, the market tends to create and then take it before a real directional move happens. Retail traders place orders at predictable areas, and those areas are exactly where liquidity pools:
+1. Trendline Liquidity — an ascending or descending trendline drawn across swing highs/lows. Retail buys/sells at the trendline or on its break. Price often wicks through the trendline (grabbing liquidity) before reversing into the larger move.
+2. Range / Support & Resistance Liquidity — a horizontal range where retail buys support and sells resistance. Liquidity pools above the range high and below the range low. Price often spikes beyond the range boundary (a liquidity grab) before reversing back through the range in the opposite direction.
+3. Equal Lows ("double bottom") Liquidity — two or more lows at roughly the same price. Retail buys the "double bottom." Liquidity (sell stops) rests just below those equal lows. Expect a wick below the equal lows followed by a bullish reversal.
+4. Equal Highs ("double top") Liquidity — two or more highs at roughly the same price. Retail sells the "double top." Liquidity (buy stops) rests just above those equal highs. Expect a wick above the equal highs followed by a bearish reversal.
 
-PART 2 — MARKET STRUCTURE, POIs, PREMIUM/DISCOUNT (from "The Market Maker's Matrix"):
-- Structure: bullish = higher highs + higher lows; bearish = lower highs + lower lows. A Break of Structure (BOS) happens when a low that caused a higher high is broken by a candle BODY (bullish trend), or a high that caused a lower low is broken by a candle body (bearish trend). A wick alone does not confirm a BOS.
-- POI (Point of Interest) — the last opposite-direction candle (or small base) immediately before a BOS. This is the origin of the impulsive move and the area price is expected to return to. Mark it as a zone, not a single line: from the extreme wick of that candle to the open of the imbalance it left behind.
-- Premium / Discount — draw the current trading range (swing high to swing low) and mark its midpoint (50%). Above the midpoint = Premium (favor looking for shorts). Below the midpoint = Discount (favor looking for longs). A POI sitting in the "wrong" half of the range (e.g. a demand POI deep in premium) is lower quality.
-- Sponsorship — the origin of a move (the extreme high/low before a BOS) is a "protected" level; price is unlikely to trade back past it without invalidating the whole idea.
+General logic: a genuine reversal signal requires (a) identifying one of the four liquidity types above on the chart, and (b) seeing price already sweep/grab that liquidity (a wick or spike beyond the level) followed by rejection back the other way. A level that hasn't been swept yet is not yet a signal — it's a level to watch.
 
-PART 4 — NAMED ENTRY SETUPS (from "Understanding Liquidity" — use these exact names to classify HOW price is entering):
-Liquidity pools are labeled BSL (Buy Stop Liquidity — sits above old highs, PDH/PWH/PMH, equal highs) or SSL (Sell Stop Liquidity — sits below old lows, PDL/PWL/PML, equal lows). A Stop Hunt (SH) is the false breakout that sweeps BSL or SSL. BMS/BOS is the resulting break in market structure; a ChoCh (Change of Character) is a BMS against the prior trend (HL or LH broken), signaling a possible reversal, vs. a continuation BOS (another HH or LL in the same direction). RTO = Return To Origin, i.e. price coming back to retest the BMS/POI level before continuing — this can be a "quick RTO" (comes back almost immediately) or a "late RTO" (chops through equal highs/lows first before finally returning). Classify the setup on the chart as one of:
-1. "SH-ChoCh Quick RTO" — stop hunt sweeps BSL/SSL, causes a ChoCh, price returns to the BMS level quickly and enters.
-2. "SH-ChoCh Late RTO" — same as above, but price first builds more equal highs/equal lows (extra liquidity) before finally returning to the BMS level.
-3. "SH + Confirmation Re-entry (Quick RTO)" — after the first SH-ChoCh, price makes a second smaller stop hunt + BMS right near the level, and entry is taken on that second (confirmation) leg, quickly.
-4. "SH + Confirmation Re-entry (Late RTO)" — same as #3 but with equal highs/lows forming before the confirmation leg.
-5. "SH + Fake BMS" — after the first ChoCh, price makes a break that LOOKS like a new BMS/CHoCH but fails to actually reverse (a "fake BMS"), and the real entry only comes on the next genuine BMS back toward the origin.
-6. "SH + Compression" — after the BMS, price does NOT retrace cleanly; instead it moves sideways in a tight, choppy, overlapping range near the level (compression) before releasing in the trade direction. Entry is taken as price breaks out of the compression.
-If none of these six patterns are clearly visible, set entrySetupType to "None" and treat it as a generic liquidity/BOS setup instead.
-Always trade in the direction of the higher-timeframe trend (Factor: The Trend), only treat equal highs/equal lows as genuine SnR if price has faked out through them already (Factor: Support & Resistance), and always prefer entries where compression or a clean RTO is visible over entries taken mid-impulse (Factor: Compression).
-
-PART 5 — ASSET SCOPE:
-This framework applies equally to forex, metals, and synthetic/volatility indices. Do not assume forex-specific behavior (like session times or news events) matters — analyze pure price action/structure only, since synthetic indices trade 24/7 with no news dependency.
-
-PART 3 — THE FULL TRADE-PLAN CHECKLIST (from Chapter 12 — this is how you decide BUY / SELL / WAIT):
-Score the chart against these five confluences. Each is true/false — do not assume one from another.
-1. liquidityGrab — Has price swept one of the PART 1 liquidity types (trendline, range high/low, equal highs, or equal lows) with a wick/spike and shown rejection?
-2. bosInHtfDirection — Did that liquidity grab lead to a Break of Structure (candle-body close through a swing point) in the direction of the higher-timeframe trend visible on the chart?
-3. complexPullback — After the BOS, is price now retracing back toward the POI slowly/choppily (not a sharp v-shape), suggesting the market doesn't want to go the other way?
-4. premiumDiscountLocation — Is the POI/entry area on the correct side of the range's 50% midpoint (discount for longs, premium for shorts)?
-5. poiBelowLiquidity — Does the POI sit below (for a long) or above (for a short) another liquidity point/pool, giving price a magnet to reach once the POI reacts?
-
-Signal logic:
-- BUY or SELL requires AT MINIMUM confluences 1 and 2 true (liquidity grab + BOS in that direction), with 3-5 adding confidence. 5/5 = High confidence. 3-4/5 = Medium. Exactly 2/5 (only 1+2) = Low confidence, only signal if the setup still looks clean.
-- WAIT if confluence 1 or 2 is false, if price hasn't returned to a POI yet (still just a "potential" setup per the book), if the chart is ambiguous, or if it isn't a price chart at all.
-- Never force a BUY or SELL if the setup isn't clean — be honest about uncertainty.
-
-SYMBOL:
-Read the instrument/pair name printed on the chart (axis label, watermark, or title — e.g. "EURUSD", "XAUUSD", "Volatility 75 Index", "GBPJPY"). Set "symbol" to that exact text if visible. If you cannot find it printed anywhere on the chart, set "symbol" to null — do not guess.
+TASK: Look at the uploaded chart screenshot. Identify visible liquidity structures (trendlines, ranges, equal highs, equal lows) and determine whether price has already grabbed liquidity at one of them with signs of rejection/reversal.
 
 TAKE PROFIT — FIBONACCI EXTENSION:
 Once you have a BUY or SELL signal, calculate a take-profit price using the 161.8% Fibonacci extension:
 1. Read three price levels off the chart's price axis:
    - Point A: price where the relevant impulse move began
    - Point B: price where that impulse move ended and the pullback/retracement began
-   - Point C: price where the retracement ended and reversed (your entry area, at the POI/liquidity grab)
+   - Point C: price where the retracement ended and reversed (your entry area, at the liquidity grab)
 2. Compute take profit using a 1.618 multiple of the first leg's size, projected from C:
    - BUY: takeProfit = C + (|A - B| * 1.618)
    - SELL: takeProfit = C - (|A - B| * 1.618)
-3. Round to match the chart's price precision (match the decimals shown on the axis).
-Always set "takeProfitNote" to "161.8% extension". If you cannot clearly read three price levels, set "takeProfit" to null and say why in "reasoning".
-
-STOP LOSS:
-Set "stopLoss" a few ticks beyond the POI's protective extreme (below the POI low for a BUY, above the POI high for a SELL) — the "sponsorship" level from Part 2. If unclear, set to null.
+3. Round to match the chart's price precision (e.g. 3 decimals for a pair like this, 2 for others — match what's on the axis).
+Always set "takeProfitNote" to "161.8% extension". If you cannot clearly read three price levels to do this calculation, set "takeProfit" to null and say why in "reasoning".
 
 Respond with ONLY a JSON object, no other text, no markdown fences, in this exact shape:
-{
-  "signal": "BUY" | "SELL" | "WAIT",
-  "confidence": "High" | "Medium" | "Low",
-  "reasoning": "2-3 short sentences, plain language, walking through which liquidity was grabbed, the BOS, and the POI",
-  "zones": ["short tag", "short tag"],
-  "symbol": "exact instrument name read from the chart, or null",
-  "htfBias": "Bullish" | "Bearish" | "Ranging",
-  "premiumDiscount": "Premium" | "Discount" | "Equilibrium",
-  "poi": "short description of the POI location/type, or null",
-  "entrySetupType": "SH-ChoCh Quick RTO" | "SH-ChoCh Late RTO" | "SH + Confirmation Re-entry (Quick RTO)" | "SH + Confirmation Re-entry (Late RTO)" | "SH + Fake BMS" | "SH + Compression" | "None",
-  "confluences": {
-    "liquidityGrab": true or false,
-    "bosInHtfDirection": true or false,
-    "complexPullback": true or false,
-    "premiumDiscountLocation": true or false,
-    "poiBelowLiquidity": true or false
-  },
-  "stopLoss": number or null,
-  "takeProfit": number or null,
-  "takeProfitNote": "short label like '161.8% extension' or null"
-}
+{"signal": "BUY" | "SELL" | "WAIT", "confidence": "High" | "Medium" | "Low", "reasoning": "1-2 short sentences, plain language, referencing the specific liquidity type and where on the chart it happened", "zones": ["short tag", "short tag"], "takeProfit": number or null, "takeProfitNote": "short label like '161.8% extension' or null"}
 
-Keep "zones" to 1-4 short tags like "BSL swept at PDH", "SSL swept at equal lows", "ChoCh confirmed", "Demand POI in discount".`;
+Use WAIT when no liquidity has clearly been grabbed yet, when the chart is ambiguous, or when it isn't a price chart at all. Keep "zones" to 1-4 short tags like "Equal highs swept", "Range low grabbed", "Trendline liquidity". Be honest about uncertainty — do not force a BUY or SELL if the setup isn't clean.`;
 
 analyzeBtn.addEventListener('click', async () => {
   if (!base64Data) return;
@@ -668,7 +582,7 @@ analyzeBtn.addEventListener('click', async () => {
   errorEl.classList.remove('show');
 
   try {
-    const model = "gemini-3.6-flash";
+    const model = "gemini-3.5-flash-lite";
     const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(apiKey);
 
     const response = await fetch(url, {
@@ -678,7 +592,7 @@ analyzeBtn.addEventListener('click', async () => {
         system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{
           parts: [
-            { text: "Analyze this chart using the liquidity + market structure/POI strategy and return the JSON signal." },
+            { text: "Analyze this chart using the liquidity concepts strategy and return the JSON signal." },
             { inline_data: { mime_type: mediaType, data: base64Data } }
           ]
         }],
@@ -728,64 +642,6 @@ function renderResult(parsed){
     tagsEl.appendChild(t);
   });
 
-  // HTF bias / premium-discount
-  if (parsed.htfBias || parsed.premiumDiscount) {
-    biasCard.style.display = 'block';
-    biasValue.textContent = parsed.htfBias || '—';
-    biasValue.style.color = parsed.htfBias === 'Bullish' ? 'var(--buy)'
-      : parsed.htfBias === 'Bearish' ? 'var(--sell)' : 'var(--ink)';
-    pdValue.textContent = parsed.premiumDiscount || '—';
-    pdValue.style.color = parsed.premiumDiscount === 'Discount' ? 'var(--buy)'
-      : parsed.premiumDiscount === 'Premium' ? 'var(--sell)' : 'var(--ink)';
-  } else {
-    biasCard.style.display = 'none';
-  }
-
-  // Point of interest
-  if (parsed.poi) {
-    poiCard.style.display = 'block';
-    poiText.textContent = parsed.poi;
-  } else {
-    poiCard.style.display = 'none';
-  }
-
-  // Named entry setup
-  if (parsed.entrySetupType && parsed.entrySetupType !== 'None') {
-    entrySetupCard.style.display = 'block';
-    entrySetupText.textContent = parsed.entrySetupType;
-  } else {
-    entrySetupCard.style.display = 'none';
-  }
-
-  // Confluence checklist
-  const conf = parsed.confluences || null;
-  if (conf) {
-    confluenceCard.style.display = 'block';
-    checklist.innerHTML = '';
-    Object.keys(CONFLUENCE_LABELS).forEach(key => {
-      const met = !!conf[key];
-      const li = document.createElement('li');
-      const dot = document.createElement('span');
-      dot.className = 'dot ' + (met ? 'yes' : 'no');
-      dot.textContent = met ? '✓' : '–';
-      const label = document.createElement('span');
-      label.textContent = CONFLUENCE_LABELS[key];
-      li.appendChild(dot);
-      li.appendChild(label);
-      checklist.appendChild(li);
-    });
-  } else {
-    confluenceCard.style.display = 'none';
-  }
-
-  // Stop loss
-  if (parsed.stopLoss !== null && parsed.stopLoss !== undefined) {
-    slCard.style.display = 'block';
-    slValue.textContent = parsed.stopLoss;
-  } else {
-    slCard.style.display = 'none';
-  }
-
   const tpCard = document.getElementById('tpCard');
   const tpValue = document.getElementById('tpValue');
   const tpNote = document.getElementById('tpNote');
@@ -798,62 +654,252 @@ function renderResult(parsed){
     tpCard.style.display = 'none';
   }
 
-  maybeAutoSendToMt5(parsed, signal);
-
   resultEl.classList.add('show');
 }
 
-function maybeAutoSendToMt5(parsed, signal){
-  mt5StatusCard.style.display = 'none';
-  if (!autoSend) return;
-  if (signal !== 'BUY' && signal !== 'SELL') return;
+// ---- Mode toggle ----
+const modeScreenshotBtn = document.getElementById('modeScreenshotBtn');
+const modeLiveBtn = document.getElementById('modeLiveBtn');
+const screenshotModeEl = document.getElementById('screenshotMode');
+const liveModeEl = document.getElementById('liveMode');
 
-  if (!bridgeUrl) {
-    mt5StatusCard.style.display = 'block';
-    mt5StatusText.textContent = 'Auto-send is on, but no bridge URL is set — open settings (gear icon) to add one.';
-    return;
-  }
-  const symbol = (parsed.symbol && String(parsed.symbol).trim()) || defaultSymbol;
-  if (!symbol) {
-    mt5StatusCard.style.display = 'block';
-    mt5StatusText.textContent = 'Could not read a symbol off the chart and no default symbol is set — trade NOT sent. Set a default symbol in settings.';
-    return;
-  }
-  if (parsed.stopLoss === null || parsed.stopLoss === undefined || parsed.takeProfit === null || parsed.takeProfit === undefined) {
-    mt5StatusCard.style.display = 'block';
-    mt5StatusText.textContent = 'Missing stop loss or take profit — trade NOT sent to MT5 (the EA requires both).';
-    return;
-  }
+modeScreenshotBtn.addEventListener('click', () => {
+  modeScreenshotBtn.classList.add('active');
+  modeLiveBtn.classList.remove('active');
+  screenshotModeEl.style.display = 'block';
+  liveModeEl.style.display = 'none';
+  resultEl.classList.remove('show');
+  errorEl.classList.remove('show');
+});
+modeLiveBtn.addEventListener('click', () => {
+  modeLiveBtn.classList.add('active');
+  modeScreenshotBtn.classList.remove('active');
+  liveModeEl.style.display = 'block';
+  screenshotModeEl.style.display = 'none';
+  resultEl.classList.remove('show');
+  errorEl.classList.remove('show');
+});
 
-  mt5StatusCard.style.display = 'block';
-  mt5StatusText.textContent = 'Sending to MT5 bridge…';
-
-  const payload = {
-    signal: signal,
-    symbol: symbol,
-    stopLoss: parsed.stopLoss,
-    takeProfit: parsed.takeProfit,
-    confidence: parsed.confidence || null,
-    entrySetupType: parsed.entrySetupType || null,
-    htfBias: parsed.htfBias || null,
-    reasoning: parsed.reasoning || null
-  };
-
-  fetch(bridgeUrl + '/signal', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Signal-Secret': bridgeSecret },
-    body: JSON.stringify(payload)
-  }).then(async (res) => {
-    if (!res.ok) {
-      let body = '';
-      try { body = await res.text(); } catch (e) {}
-      throw new Error('HTTP ' + res.status + (body ? ': ' + body.slice(0, 150) : ''));
-    }
-    mt5StatusText.textContent = 'Sent — ' + signal + ' ' + symbol + ' queued for the EA to execute.';
-  }).catch((err) => {
-    mt5StatusText.textContent = 'Send failed: ' + err.message + ' (check the bridge server is running and reachable).';
+// ---- Symbol / timeframe chips ----
+let selectedSymbol = 'EUR/USD';
+let selectedTf = '1h';
+document.querySelectorAll('#symbolRow .chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#symbolRow .chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedSymbol = btn.dataset.symbol;
   });
+});
+document.querySelectorAll('#timeframeRow .chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#timeframeRow .chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedTf = btn.dataset.tf;
+  });
+});
+
+// ---- Live chart: fetch + render ----
+const loadChartBtn = document.getElementById('loadChartBtn');
+const liveStatus = document.getElementById('liveStatus');
+const liveError = document.getElementById('liveError');
+const chartCard = document.getElementById('chartCard');
+const scanBtn = document.getElementById('scanBtn');
+let liveCandles = [];
+let chartInstance = null;
+let candleSeries = null;
+
+function decimalsFor(symbol){
+  if (symbol.includes('JPY')) return 3;
+  if (symbol.includes('XAU')) return 2;
+  return 5;
 }
+
+loadChartBtn.addEventListener('click', async () => {
+  if (!marketKey) { showSetup(false); return; }
+  liveStatus.classList.add('show');
+  liveError.classList.remove('show');
+  chartCard.style.display = 'none';
+  scanBtn.style.display = 'none';
+  resultEl.classList.remove('show');
+
+  try {
+    const url = "https://api.twelvedata.com/time_series?symbol=" + encodeURIComponent(selectedSymbol) +
+      "&interval=" + selectedTf + "&outputsize=150&apikey=" + encodeURIComponent(marketKey);
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.status === "error" || !data.values) {
+      throw new Error(data.message || "Could not fetch candle data.");
+    }
+    liveCandles = data.values.map(v => ({
+      time: Math.floor(new Date(v.datetime.replace(' ', 'T') + 'Z').getTime() / 1000),
+      open: parseFloat(v.open), high: parseFloat(v.high),
+      low: parseFloat(v.low), close: parseFloat(v.close)
+    })).sort((a, b) => a.time - b.time);
+
+    chartCard.style.display = 'block';
+    const container = document.getElementById('chartContainer');
+    container.innerHTML = '';
+    chartInstance = LightweightCharts.createChart(container, {
+      layout: { background: { color: 'transparent' }, textColor: '#8592AC' },
+      grid: { vertLines: { color: '#1E293F' }, horzLines: { color: '#1E293F' } },
+      width: container.clientWidth, height: 280,
+      timeScale: { timeVisible: true, borderColor: '#1E293F' },
+      rightPriceScale: { borderColor: '#1E293F' }
+    });
+    candleSeries = chartInstance.addCandlestickSeries({
+      upColor: '#34D399', downColor: '#F87171',
+      borderUpColor: '#34D399', borderDownColor: '#F87171',
+      wickUpColor: '#34D399', wickDownColor: '#F87171'
+    });
+    candleSeries.setData(liveCandles);
+    chartInstance.timeScale().fitContent();
+
+    scanBtn.style.display = 'block';
+  } catch (err) {
+    console.error(err);
+    liveError.textContent = "Error: " + err.message;
+    liveError.classList.add('show');
+  } finally {
+    liveStatus.classList.remove('show');
+  }
+});
+
+// ---- Algorithmic liquidity-concepts signal engine ----
+function findPivots(candles, k) {
+  const highs = [], lows = [];
+  for (let i = k; i < candles.length - k; i++) {
+    let isHigh = true, isLow = true;
+    for (let j = i - k; j <= i + k; j++) {
+      if (j === i) continue;
+      if (candles[j].high >= candles[i].high) isHigh = false;
+      if (candles[j].low <= candles[i].low) isLow = false;
+    }
+    if (isHigh) highs.push({ index: i, price: candles[i].high });
+    if (isLow) lows.push({ index: i, price: candles[i].low });
+  }
+  return { highs, lows };
+}
+
+function avgRange(candles, n) {
+  const slice = candles.slice(-n);
+  const sum = slice.reduce((s, c) => s + (c.high - c.low), 0);
+  return sum / slice.length;
+}
+
+function scanLiquidity(candles) {
+  const last = candles[candles.length - 1];
+  const { highs, lows } = findPivots(candles, 3);
+  const atr = avgRange(candles, 14) || (last.high - last.low) || 0.0001;
+  const tolerance = atr * 0.25;
+
+  const levels = []; // {price, type: 'resistance'|'support', label, pivotIndex}
+
+  // Equal highs / equal lows (group nearby pivots)
+  function groupEqual(pivots, type) {
+    const sorted = [...pivots].sort((a, b) => b.index - a.index);
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = i + 1; j < sorted.length; j++) {
+        if (Math.abs(sorted[i].price - sorted[j].price) <= tolerance) {
+          levels.push({
+            price: (sorted[i].price + sorted[j].price) / 2,
+            type, label: type === 'resistance' ? 'Equal highs' : 'Equal lows',
+            pivotIndex: Math.max(sorted[i].index, sorted[j].index)
+          });
+          return;
+        }
+      }
+    }
+  }
+  groupEqual(highs, 'resistance');
+  groupEqual(lows, 'support');
+
+  // Range liquidity (last 40 candles)
+  const rangeSlice = candles.slice(-40, -1);
+  if (rangeSlice.length > 5) {
+    const rangeHigh = Math.max(...rangeSlice.map(c => c.high));
+    const rangeLow = Math.min(...rangeSlice.map(c => c.low));
+    levels.push({ price: rangeHigh, type: 'resistance', label: 'Range high liquidity', pivotIndex: null });
+    levels.push({ price: rangeLow, type: 'support', label: 'Range low liquidity', pivotIndex: null });
+  }
+
+  // Trendline liquidity: last two ascending lows / descending highs, projected to current bar
+  const recentLows = lows.filter(p => p.index >= candles.length - 60).slice(-2);
+  if (recentLows.length === 2 && recentLows[1].price > recentLows[0].price) {
+    const slope = (recentLows[1].price - recentLows[0].price) / (recentLows[1].index - recentLows[0].index);
+    const projected = recentLows[1].price + slope * (candles.length - 1 - recentLows[1].index);
+    levels.push({ price: projected, type: 'support', label: 'Trendline liquidity', pivotIndex: recentLows[1].index });
+  }
+  const recentHighs = highs.filter(p => p.index >= candles.length - 60).slice(-2);
+  if (recentHighs.length === 2 && recentHighs[1].price < recentHighs[0].price) {
+    const slope = (recentHighs[1].price - recentHighs[0].price) / (recentHighs[1].index - recentHighs[0].index);
+    const projected = recentHighs[1].price + slope * (candles.length - 1 - recentHighs[1].index);
+    levels.push({ price: projected, type: 'resistance', label: 'Trendline liquidity', pivotIndex: recentHighs[1].index });
+  }
+
+  // Check the most recent 1-2 candles for a sweep-and-reject at any level
+  const checkCandles = candles.slice(-2);
+  let bestMatch = null;
+  for (const level of levels) {
+    for (const c of checkCandles) {
+      if (level.type === 'support' && c.low < level.price - tolerance * 0.2 && c.close > level.price) {
+        const margin = (c.close - level.price) / atr;
+        bestMatch = pickBetter(bestMatch, { direction: 'BUY', level, margin });
+      }
+      if (level.type === 'resistance' && c.high > level.price + tolerance * 0.2 && c.close < level.price) {
+        const margin = (level.price - c.close) / atr;
+        bestMatch = pickBetter(bestMatch, { direction: 'SELL', level, margin });
+      }
+    }
+  }
+
+  function pickBetter(a, b) { return (!a || b.margin > a.margin) ? b : a; }
+
+  if (!bestMatch) {
+    return { signal: 'WAIT', confidence: 'Low', reasoning: 'No liquidity sweep with a clean rejection found on the most recent candles — no level has clearly been grabbed and reversed yet.', zones: [], takeProfit: null, takeProfitNote: null };
+  }
+
+  const confidence = bestMatch.margin > 0.5 ? 'High' : bestMatch.margin > 0.15 ? 'Medium' : 'Low';
+  const zones = [...new Set(levels.filter(l => l.price === bestMatch.level.price).map(l => l.label))];
+  if (zones.length === 0) zones.push(bestMatch.level.label);
+
+  // Take profit via 1.618 extension of the leg leading into the swept level
+  let takeProfit = null, takeProfitNote = null;
+  const decimals = decimalsFor(selectedSymbol);
+  if (bestMatch.direction === 'BUY') {
+    const priorHighs = highs.filter(p => p.index < (bestMatch.level.pivotIndex ?? candles.length));
+    if (priorHighs.length) {
+      const A = priorHighs[priorHighs.length - 1].price;
+      const B = bestMatch.level.price;
+      const leg = Math.abs(A - B);
+      takeProfit = +(last.close + leg * 1.618).toFixed(decimals);
+      takeProfitNote = '161.8% extension';
+    }
+  } else {
+    const priorLows = lows.filter(p => p.index < (bestMatch.level.pivotIndex ?? candles.length));
+    if (priorLows.length) {
+      const A = priorLows[priorLows.length - 1].price;
+      const B = bestMatch.level.price;
+      const leg = Math.abs(B - A);
+      takeProfit = +(last.close - leg * 1.618).toFixed(decimals);
+      takeProfitNote = '161.8% extension';
+    }
+  }
+
+  return {
+    signal: bestMatch.direction,
+    confidence,
+    reasoning: `Price swept the ${zones[0].toLowerCase()} level near ${bestMatch.level.price.toFixed(decimals)} and closed back through it, suggesting a liquidity grab and reversal.`,
+    zones,
+    takeProfit,
+    takeProfitNote
+  };
+}
+
+scanBtn.addEventListener('click', () => {
+  if (!liveCandles.length) return;
+  const result = scanLiquidity(liveCandles);
+  renderResult(result);
+});
 </script>
 </body>
 </html>
