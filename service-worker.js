@@ -1,11 +1,14 @@
-const CACHE_NAME = "liquidity-signal-v1";
+const CACHE_NAME = "liquidity-signal-v3";
 const SHELL_FILES = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./hero-bg.svg",
+  "./icon-192.png",
+  "./icon-512.png"
 ];
+
+const NO_CACHE_HOSTS = ["generativelanguage.googleapis.com", "api.twelvedata.com"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -26,8 +29,8 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Never cache API calls — always go to the network.
-  if (url.hostname === "api.anthropic.com") {
+  // Never cache live API calls — always go to the network.
+  if (NO_CACHE_HOSTS.includes(url.hostname)) {
     return;
   }
 
