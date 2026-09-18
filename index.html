@@ -289,6 +289,13 @@
   .checklist-icon.fail{ background: var(--panel-line); color: var(--ink-dim); }
   .checklist-item.pass-text{ color: var(--ink); }
   .checklist-item.fail-text{ color: var(--ink-dim); }
+  .stat-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding: 7px 0; font-size: 13.5px;
+  }
+  .stat-row:not(:last-child){ border-bottom: 1px solid var(--panel-line); }
+  .stat-row .stat-label{ color: var(--ink-dim); }
+  .stat-row .stat-value{ font-family: var(--mono); color: var(--ink); }
 
   .error{
     display:none; color: var(--sell); font-size: 13.5px; padding: 14px;
@@ -316,7 +323,7 @@
     </div>
     <div class="titles">
       <h1>Liquidity Signal</h1>
-      <p>Liquidity, structure &amp; POI confluence</p>
+      <p>Mean reversion — z-score oversold/overbought</p>
     </div>
     <button class="gear" id="gearBtn" title="Change API key">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -429,8 +436,8 @@
         <div class="tags" id="tags"></div>
       </div>
       <div class="card">
-        <div class="reasoning-label">Trade Plan Checklist</div>
-        <div id="checklistList"></div>
+        <div class="reasoning-label">Stats</div>
+        <div id="statsList"></div>
       </div>
       <div class="card" id="tpCard" style="display:none;">
         <div class="reasoning-label">Take Profit</div>
@@ -442,7 +449,7 @@
     </div>
 
     <footer>
-      Reads liquidity grabs, break of structure, POIs &amp; premium/discount<br>using the Chapter 12 trade-plan checklist. Not financial advice.
+      Flags overbought/oversold conditions using z-score distance from the<br>rolling mean. Live Chart mode computes this exactly. Not financial advice.
     </footer>
   </div>
 
@@ -561,33 +568,23 @@ function showError(msg){
   resultEl.classList.remove('show');
 }
 
-const SYSTEM_PROMPT = `You are a trading chart analyst applying ONE specific strategy: a 5-confluence trade-plan checklist. ALL FIVE confluences must clearly line up before returning BUY or SELL — this is a strict checklist, not a majority-vote. If even one is missing or unclear, the correct answer is WAIT.
+const SYSTEM_PROMPT = `You are a trading chart analyst applying ONE specific strategy: Mean Reversion.
 
-THE FIVE CONFLUENCES (all required):
-1. LIQUIDITY GRAB INTO A ZONE — A supply or demand zone has grabbed liquidity by sweeping the lowest low or highest high of a visible range, and that sweep mitigates into (returns to tap) another supply/demand zone. Also read the overall visible trend direction on this chart (bullish, bearish, or ranging) as your higher-timeframe bias proxy.
-2. BREAK OF STRUCTURE (BOS) — From the zone that grabbed liquidity, price must break structure (make a clear higher high in an uptrend, or lower low in a downtrend) in the direction of the bias from #1. The point of origin left behind by this break is the POI (point of interest).
-3. COMPLEX PULLBACK TO THE POI — After the BOS, price must pull back slowly/choppily back toward the POI (not a single sharp candle) — a lethargic retracement suggesting the market doesn't want to reverse. If a small trendline is visible on this pullback, note it — expect it to get swept in the direction of the bias.
-4. PREMIUM / DISCOUNT — Measure the range of the recent structural swing (from the liquidity-grab extreme to the BOS extreme) and find its midpoint. The POI must sit in discount (bottom half) for a BUY, or premium (top half) for a SELL. If price is at the wrong half, this fails and the answer is WAIT regardless of the other four.
-5. LIQUIDITY BEYOND THE POI — The POI must have a liquidity pool resting just beyond it in the direction of the anticipated move: equal highs/lows, a trendline, or a prior swing high/low. This is the fuel/target for the move, and also supports the take-profit calculation.
+STRATEGY: Prices tend to revert to their recent average (mean) after overshooting it due to noise, sentiment, or temporary shocks. The approach:
+1. MEAN — Estimate the recent average price implied by the visible candles (equivalent to roughly a 20-period moving average) — the central tendency of the price action shown.
+2. DEVIATION — Judge how far the most recent close has moved away from that estimated mean, relative to the typical size of the visible candles and recent swings (this is a visual stand-in for a z-score, since no indicator is drawn on this chart).
+3. ENTRY — If the current price has overshot notably far BELOW the estimated mean (oversold), the signal is BUY, expecting reversion upward. If it has overshot notably far ABOVE the estimated mean (overbought), the signal is SELL, expecting reversion downward. If price is close to the mean or the deviation is not clearly pronounced, the signal is WAIT.
+4. Because you are estimating this visually rather than computing it, only signal BUY or SELL when the deviation from the mean is obvious and pronounced — a borderline or ambiguous case should be WAIT.
 
-TASK: Look at the uploaded chart screenshot and check all five confluences in order. Only return BUY or SELL if every single one is satisfied. For EVERY response — including WAIT — you must evaluate and report all 5 confluences individually as true/false, even the ones you didn't reach conclusively (mark those false). Use "reasoning" to name which confluences you found, and if returning WAIT, say plainly which confluence(s) are missing or unclear.
+TASK: Look at the uploaded chart screenshot. Estimate the mean price level, judge the current deviation from it, and decide BUY / SELL / WAIT accordingly.
 
-TAKE PROFIT — FIBONACCI EXTENSION:
-Once all 5 confluences align for a BUY or SELL, calculate a take-profit price using the 161.8% Fibonacci extension of the BOS impulse leg:
-1. Read three price levels off the chart's price axis:
-   - Point A: price where the liquidity grab occurred (the origin of the BOS impulse)
-   - Point B: price where the BOS impulse ended (the new high/low that confirmed structure broke)
-   - Point C: price where the pullback ended and price is expected to resume from (your entry area, at the POI)
-2. Compute take profit using a 1.618 multiple of the A-to-B leg, projected from C:
-   - BUY: takeProfit = C + (|A - B| * 1.618)
-   - SELL: takeProfit = C - (|A - B| * 1.618)
-3. Round to match the chart's price precision (e.g. 3 decimals for a pair like this, 2 for others — match what's on the axis).
-Always set "takeProfitNote" to "161.8% extension". If you cannot clearly read three price levels to do this calculation, set "takeProfit" to null and say why in "reasoning".
+TAKE PROFIT — REVERSION TO MEAN:
+Since this strategy exits when price reverts to the mean, set "takeProfit" to your estimated mean price (the level price is expected to revert to), rounded to match the chart's price precision. Set "takeProfitNote" to "Reversion to mean". If you cannot estimate a mean level with reasonable confidence, set "takeProfit" to null.
 
 Respond with ONLY a JSON object, no other text, no markdown fences, in this exact shape:
-{"signal": "BUY" | "SELL" | "WAIT", "confidence": "High" | "Medium" | "Low", "reasoning": "2-3 short sentences naming which of the 5 confluences are present and which (if any) are missing", "zones": ["short tag", "short tag"], "checklist": [{"label": "Liquidity grab with rejection", "passed": true or false}, {"label": "BOS in HTF direction", "passed": true or false}, {"label": "Complex pullback to POI", "passed": true or false}, {"label": "Correct premium/discount side", "passed": true or false}, {"label": "POI backed by further liquidity", "passed": true or false}], "takeProfit": number or null, "takeProfitNote": "short label like '161.8% extension' or null"}
+{"signal": "BUY" | "SELL" | "WAIT", "confidence": "High" | "Medium" | "Low", "reasoning": "1-2 short sentences describing the estimated mean and how far/where price has deviated from it", "zones": ["short tag", "short tag"], "stats": [{"label": "Estimated mean", "value": "short string or number"}, {"label": "Deviation", "value": "short description like 'well below mean' or 'near mean'"}], "takeProfit": number or null, "takeProfitNote": "Reversion to mean" or null}
 
-Use WAIT whenever any of the 5 confluences is missing, unclear, or the chart is ambiguous or isn't a price chart at all. Keep "zones" to short tags like "Liquidity grab", "BOS", "Discount POI", "Equal highs beyond POI". Be strict and honest — do not force a BUY or SELL unless every confluence genuinely lines up.`;
+Use WAIT when the deviation from the estimated mean isn't clearly pronounced, when the chart is ambiguous, or when it isn't a price chart at all. Keep "zones" to short tags like "Oversold", "Overbought", "Near mean". Be honest about the visual-estimate nature of this — do not force a BUY or SELL on a marginal deviation.`;
 
 analyzeBtn.addEventListener('click', async () => {
   if (!base64Data) return;
@@ -659,28 +656,29 @@ function renderResult(parsed){
     tagsEl.appendChild(t);
   });
 
-  const checklistList = document.getElementById('checklistList');
-  checklistList.innerHTML = '';
-  const defaultChecklist = [
-    'Liquidity grab with rejection',
-    'BOS in HTF direction',
-    'Complex pullback to POI',
-    'Correct premium/discount side',
-    'POI backed by further liquidity'
-  ].map(label => ({ label, passed: false }));
-  const checklist = (parsed.checklist && parsed.checklist.length === 5) ? parsed.checklist : defaultChecklist;
-  checklist.forEach(item => {
+  const statsList = document.getElementById('statsList');
+  statsList.innerHTML = '';
+  const stats = Array.isArray(parsed.stats) ? parsed.stats : [];
+  if (stats.length === 0) {
     const row = document.createElement('div');
-    row.className = 'checklist-item ' + (item.passed ? 'pass-text' : 'fail-text');
-    const icon = document.createElement('div');
-    icon.className = 'checklist-icon ' + (item.passed ? 'pass' : 'fail');
-    icon.textContent = item.passed ? '✓' : '–';
-    const label = document.createElement('span');
-    label.textContent = item.label;
-    row.appendChild(icon);
-    row.appendChild(label);
-    checklistList.appendChild(row);
-  });
+    row.className = 'stat-row';
+    row.innerHTML = '<span class="stat-label">No stats available</span>';
+    statsList.appendChild(row);
+  } else {
+    stats.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'stat-row';
+      const label = document.createElement('span');
+      label.className = 'stat-label';
+      label.textContent = s.label;
+      const value = document.createElement('span');
+      value.className = 'stat-value';
+      value.textContent = s.value;
+      row.appendChild(label);
+      row.appendChild(value);
+      statsList.appendChild(row);
+    });
+  }
 
   const tpCard = document.getElementById('tpCard');
   const tpValue = document.getElementById('tpValue');
@@ -826,150 +824,62 @@ function avgRange(candles, n) {
   return sum / slice.length;
 }
 
-function evaluateSetup(candles, highs, lows, direction, atr) {
-  const n = candles.length;
-  const lookback = 50;
-  const last = candles[n - 1];
-  const tolerance = atr * 0.3;
-  const missing = [];
-  const zones = [];
-  let passCount = 0;
-
-  const sweepPivots = direction === 'BUY'
-    ? lows.filter(p => p.index >= n - lookback)
-    : highs.filter(p => p.index >= n - lookback);
-
-  if (sweepPivots.length < 2) {
-    missing.push('a liquidity grab (not enough swing points yet)');
-    return { allPass: false, passCount: 0, missing, zones };
-  }
-
-  // Confluence 1: liquidity grab — extreme pivot sweeps beyond an earlier one
-  const sweep = direction === 'BUY'
-    ? sweepPivots.reduce((a, b) => (b.price < a.price ? b : a))
-    : sweepPivots.reduce((a, b) => (b.price > a.price ? b : a));
-  const priorPivots = sweepPivots.filter(p => p.index < sweep.index);
-  const grabbed = priorPivots.length && (direction === 'BUY'
-    ? sweep.price < priorPivots[priorPivots.length - 1].price - tolerance * 0.2
-    : sweep.price > priorPivots[priorPivots.length - 1].price + tolerance * 0.2);
-  const check1 = !!grabbed;
-  if (check1) { passCount++; zones.push('Liquidity grab'); }
-  else missing.push('a liquidity grab beyond a prior swing point');
-
-  // Confluence 2: break of structure back in the bias direction
-  const structurePivots = direction === 'BUY'
-    ? highs.filter(p => p.index < sweep.index && p.index >= sweep.index - lookback)
-    : lows.filter(p => p.index < sweep.index && p.index >= sweep.index - lookback);
-  const structurePoint = structurePivots.length ? structurePivots[structurePivots.length - 1] : null;
-  let bosConfirmed = false, bosIndex = null;
-  if (structurePoint) {
-    for (let i = sweep.index + 1; i < n; i++) {
-      if (direction === 'BUY' ? candles[i].close > structurePoint.price : candles[i].close < structurePoint.price) {
-        bosConfirmed = true; bosIndex = i; break;
-      }
-    }
-  }
-  const check2 = bosConfirmed;
-  if (check2) { passCount++; zones.push('Break of structure'); }
-  else missing.push('a break of structure back through the prior swing');
-
-  // Confluence 3: complex pullback toward the POI (gradual, partial retracement)
-  let pullbackOk = false;
-  if (bosConfirmed) {
-    const postBOS = candles.slice(bosIndex, n);
-    const extremeAfterBOS = direction === 'BUY' ? Math.max(...postBOS.map(c => c.high)) : Math.min(...postBOS.map(c => c.low));
-    const legSize = Math.abs(extremeAfterBOS - sweep.price) || atr;
-    const retraced = direction === 'BUY' ? (extremeAfterBOS - last.close) / legSize : (last.close - extremeAfterBOS) / legSize;
-    const candlesSincePeak = n - 1 - bosIndex;
-    pullbackOk = retraced >= 0.2 && retraced <= 0.85 && candlesSincePeak >= 1;
-  }
-  const check3 = pullbackOk;
-  if (check3) { passCount++; zones.push('Pullback to POI'); }
-  else missing.push(bosConfirmed ? 'a gradual pullback back to the POI' : 'pullback to POI (needs a break of structure first)');
-
-  // Confluence 4: premium / discount of the POI within the structural range
-  let pdOk = false;
-  if (bosConfirmed) {
-    const rangeSlice = candles.slice(sweep.index, n);
-    const rangeHigh = Math.max(...rangeSlice.map(c => c.high));
-    const rangeLow = Math.min(...rangeSlice.map(c => c.low));
-    const mid = (rangeHigh + rangeLow) / 2;
-    pdOk = direction === 'BUY' ? last.close < mid : last.close > mid;
-  }
-  const check4 = pdOk;
-  if (check4) { passCount++; zones.push(direction === 'BUY' ? 'Discount POI' : 'Premium POI'); }
-  else missing.push(bosConfirmed ? (direction === 'BUY' ? 'price sitting in discount (currently premium)' : 'price sitting in premium (currently discount)') : 'premium/discount check (needs a break of structure first)');
-
-  // Confluence 5: a liquidity pool resting just beyond the POI
-  const poolPivots = direction === 'BUY'
-    ? lows.filter(p => p.index < sweep.index && Math.abs(p.price - sweep.price) <= atr * 1.5)
-    : highs.filter(p => p.index < sweep.index && Math.abs(p.price - sweep.price) <= atr * 1.5);
-  const check5 = poolPivots.length > 0;
-  if (check5) { passCount++; zones.push(direction === 'BUY' ? 'Equal lows beyond POI' : 'Equal highs beyond POI'); }
-  else missing.push('a liquidity pool resting beyond the POI');
-
-  const checklist = [
-    { label: 'Liquidity grab with rejection', passed: check1 },
-    { label: 'BOS in HTF direction', passed: check2 },
-    { label: 'Complex pullback to POI', passed: check3 },
-    { label: 'Correct premium/discount side', passed: check4 },
-    { label: 'POI backed by further liquidity', passed: check5 }
-  ];
-
-  return {
-    allPass: passCount === 5,
-    passCount, missing, zones, checklist,
-    A: sweep.price,
-    B: structurePoint ? structurePoint.price : null,
-    entry: last.close,
-    direction
-  };
+function meanStd(values) {
+  const n = values.length;
+  const mean = values.reduce((s, v) => s + v, 0) / n;
+  const variance = values.reduce((s, v) => s + (v - mean) * (v - mean), 0) / n;
+  return { mean, std: Math.sqrt(variance) };
 }
 
-function scanLiquidity(candles) {
-  const last = candles[candles.length - 1];
-  const { highs, lows } = findPivots(candles, 3);
-  const atr = avgRange(candles, 14) || (last.high - last.low) || 0.0001;
+function computeMeanReversion(candles) {
+  const window = 20;
   const decimals = decimalsFor(selectedSymbol);
-
-  const buySetup = evaluateSetup(candles, highs, lows, 'BUY', atr);
-  const sellSetup = evaluateSetup(candles, highs, lows, 'SELL', atr);
-
-  const passing = [buySetup, sellSetup].filter(s => s.allPass);
-
-  if (passing.length === 0) {
-    const closer = [buySetup, sellSetup].sort((a, b) => b.passCount - a.passCount)[0];
+  if (candles.length < window + 1) {
     return {
-      signal: 'WAIT',
-      confidence: 'Low',
-      reasoning: `Checklist incomplete (${closer.passCount}/5 confluences) — still missing: ${closer.missing[0]}.`,
-      zones: closer.zones,
-      checklist: closer.checklist,
-      takeProfit: null,
-      takeProfitNote: null
+      signal: 'WAIT', confidence: 'Low',
+      reasoning: `Need at least ${window} candles to compute a reliable mean and z-score — not enough data loaded yet.`,
+      zones: [], stats: [], takeProfit: null, takeProfitNote: null
     };
   }
 
-  const result = passing[0];
-  const legSize = Math.abs(result.A - result.B);
-  const takeProfit = result.direction === 'BUY'
-    ? +(result.entry + legSize * 1.618).toFixed(decimals)
-    : +(result.entry - legSize * 1.618).toFixed(decimals);
+  const closes = candles.map(c => c.close);
+  const recentWindow = closes.slice(-window);
+  const { mean, std } = meanStd(recentWindow);
+  const last = candles[candles.length - 1];
+  const z = std > 0 ? (last.close - mean) / std : 0;
 
-  return {
-    signal: result.direction,
-    confidence: 'High',
-    reasoning: `All 5 confluences aligned: ${result.zones.join(', ').toLowerCase()}.`,
-    zones: result.zones,
-    checklist: result.checklist,
-    takeProfit,
-    takeProfitNote: '161.8% extension'
-  };
+  let signal = 'WAIT';
+  if (z <= -2) signal = 'BUY';
+  else if (z >= 2) signal = 'SELL';
+
+  const absZ = Math.abs(z);
+  const confidence = absZ >= 3 ? 'High' : absZ >= 2.4 ? 'Medium' : 'Low';
+
+  const zones = [];
+  if (signal === 'BUY') zones.push('Oversold');
+  if (signal === 'SELL') zones.push('Overbought');
+  if (signal === 'WAIT') zones.push('Near mean');
+
+  const stats = [
+    { label: 'Price', value: last.close.toFixed(decimals) },
+    { label: `Mean (SMA${window})`, value: mean.toFixed(decimals) },
+    { label: 'Std Dev', value: std.toFixed(decimals) },
+    { label: 'Z-Score', value: z.toFixed(2) }
+  ];
+
+  const reasoning = signal === 'WAIT'
+    ? `Price is close to its ${window}-period mean (z = ${z.toFixed(2)}) — no significant overbought/oversold condition to trade.`
+    : `Price has deviated ${absZ.toFixed(2)} standard deviations ${signal === 'BUY' ? 'below' : 'above'} its ${window}-period mean, suggesting an ${signal === 'BUY' ? 'oversold' : 'overbought'} condition likely to revert.`;
+
+  const takeProfit = signal === 'WAIT' ? null : +mean.toFixed(decimals);
+  const takeProfitNote = signal === 'WAIT' ? null : 'Reversion to mean';
+
+  return { signal, confidence, reasoning, zones, stats, takeProfit, takeProfitNote };
 }
 
 scanBtn.addEventListener('click', () => {
   if (!liveCandles.length) return;
-  const result = scanLiquidity(liveCandles);
+  const result = computeMeanReversion(liveCandles);
   renderResult(result);
 });
 </script>
