@@ -393,6 +393,7 @@
           <button class="chip" data-symbol="USD/CAD">USDCAD</button>
           <button class="chip" data-symbol="NZD/USD">NZDUSD</button>
           <button class="chip" data-symbol="XAU/USD">XAUUSD</button>
+          <button class="chip" data-symbol="BTC/USD">BTCUSD</button>
         </div>
         <div class="reasoning-label" style="margin-top:16px;">Timeframe</div>
         <div class="chip-row" id="timeframeRow">
@@ -749,6 +750,7 @@ let candleSeries = null;
 function decimalsFor(symbol){
   if (symbol.includes('JPY')) return 3;
   if (symbol.includes('XAU')) return 2;
+  if (symbol.includes('BTC')) return 2;
   return 5;
 }
 
